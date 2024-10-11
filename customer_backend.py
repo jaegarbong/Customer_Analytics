@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, make_response
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -46,20 +46,19 @@ def feature_engg(df):
 
     # Replace values in 'Payment Method' column
     df['Payment Method'] = df['Payment Method'].replace({
-        'Cash on Delivery': 'COD',
-        'Credit Card': 'CC',
         'Digital Wallet': 'UPI'
     })
 
     return df
+
 def calculate_recency(customer_id):
-    global data
+    global data 
     current_date = dt.datetime.now()
     customer_data = data[data['Customer ID'] == customer_id]
     if not customer_data.empty:
         last_order_date = customer_data['Order Date and Time'].max()
         recency = (current_date - last_order_date).days
-        return recency
+        return pd.DataFrame({'Metric': ['Recency'], 'Value': [recency]})
     return None
 
 def calculate_frequency(customer_id):
@@ -119,36 +118,48 @@ def calculate_preferred_payment_method(customer_id):
     return None
 
 # Load the data from file and apply feature engineering
-    data = pd.read_csv('data/customer_data.csv')
-    data = feature_engg(data)
+data = pd.read_csv(r'data\delhi_data.csv')
+data = feature_engg(data)
 
 @app.route('/api/customer_metrics/<customer_id>', methods= ['GET'])
 def get_customer_metrics(customer_id):
-    customer_metrics = pd.DataFrame(columns=['Metric', 'Value'])
-    recency_df = calculate_recency(customer_id)
-    frequency_df = calculate_frequency(customer_id)
-    aov_df = calculate_average_order_value(customer_id)    
-    preferred_order_period_df = calculate_preferred_order_period(customer_id)
-    average_days_beween_orders_df = calculate_average_days_between_orders(customer_id)
-    preffered_payment_method_df = calculate_preferred_payment_method(customer_id)
-
-    # Create a list of DataFrames, filter out None values, and concatenate them
-    metrics_list = [
-        recency_df,
-        frequency_df,
-        aov_df,
-        preferred_order_period_df,
-        average_days_beween_orders_df,
-        preffered_payment_method_df
-    ]
-
-    if any(metrics_list):
-        customer_metrics = pd.concat([df for df in metrics_list if df is not None], ignore_index=True)
-    else:
-        return jsonify({'message': 'No metrics available for the given customer ID'}), 404
     
-    # Return the customer metrics as JSON
-    return jsonify(customer_metrics.to_dict(orient='records'))
+    customer_data = data[data['Customer ID'] == customer_id]
+
+    if customer_data.empty:        
+        response = make_response(jsonify({'message': 'Customer ID not found'}), 404)
+        return response
+
+    try:   
+        customer_metrics = pd.DataFrame(columns=['Metric', 'Value'])
+        recency_df = calculate_recency(customer_id)
+        frequency_df = calculate_frequency(customer_id)
+        monetary_df= calculate_monetary(customer_id)
+        aov_df = calculate_average_order_value(customer_id)    
+        preferred_order_period_df = calculate_preferred_order_period(customer_id)
+        average_days_between_orders_df = calculate_average_days_between_orders(customer_id)
+        preferred_payment_method_df = calculate_preferred_payment_method(customer_id)
+
+        # Create a list of DataFrames, filter out None values, and concatenate them
+        metrics_list = [
+            recency_df,
+            frequency_df,
+            monetary_df,        
+            aov_df,
+            preferred_order_period_df,
+            average_days_between_orders_df,
+            preferred_payment_method_df
+        ]
+        
+        customer_metrics = pd.concat([df for df in metrics_list if df is not None], ignore_index=True)   
+        
+        # Return the customer metrics as JSON
+        return jsonify(customer_metrics.to_dict(orient='records'))
+    
+    except Exception as e:
+        # Log the error for debugging purposes
+        # print(f"Error while calculating metrics for customer ID {customer_id}: {e}")        
+        return make_response(jsonify({'message': 'An error occurred while processing metrics.'}), 500):
 
 
 if __name__ == '__main__':
