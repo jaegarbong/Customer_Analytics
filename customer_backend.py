@@ -1,10 +1,9 @@
 from flask import Flask, jsonify, request
 import pandas as pd
 import numpy as np
+import datetime as dt
 
 app = Flask(__name__)
-
-
 
 # Create order_period column based on order time
 def get_order_period(order_time):
@@ -53,18 +52,104 @@ def feature_engg(df):
     })
 
     return df
+def calculate_recency(customer_id):
+    global data
+    current_date = dt.datetime.now()
+    customer_data = data[data['Customer ID'] == customer_id]
+    if not customer_data.empty:
+        last_order_date = customer_data['Order Date and Time'].max()
+        recency = (current_date - last_order_date).days
+        return recency
+    return None
 
+def calculate_frequency(customer_id):
+    global data
+    customer_data = data[data['Customer ID'] == customer_id]
+    if not customer_data.empty:
+        frequency = len(customer_data)
+        return pd.DataFrame({'Metric': ['Frequency'], 'Value': [frequency]})
+    return None
+
+def calculate_monetary(customer_id):
+    global data
+    customer_data = data[data['Customer ID'] == customer_id]
+    if not customer_data.empty:
+        monetary = customer_data['Order Value'].sum()
+        return pd.DataFrame({'Metric': ['Monetary'], 'Value': [monetary]})
+    return None
+
+def calculate_average_order_value(customer_id):
+    global data
+    customer_df = data[data['Customer ID'] == customer_id]
+    
+    if not customer_df.empty:
+        # Calculate total value of orders (monetary) and frequency
+        monetary = customer_df['Order Value'].sum()
+        frequency = len(customer_df)
+        
+        # Calculate Average Order Value
+        aov = monetary / frequency
+        return pd.DataFrame({'Metric': ['Average Order Value'], 'Value': [round(aov,2)]})
+    
+    return None
+
+def calculate_preferred_order_period(customer_id):
+    global data
+    customer_data = data[data['Customer ID'] == customer_id]
+    if not customer_data.empty:
+        preferred_period = customer_data['Order Period'].mode()[0]
+        return pd.DataFrame({'Metric': ['Preferred Order Period'], 'Value': [preferred_period]})
+    return None
+
+def calculate_average_days_between_orders(customer_id):
+    global data
+    customer_data = data[data['Customer ID'] == customer_id].sort_values(by='Order Date and Time')
+    if len(customer_data) > 1:
+        customer_data['Time Difference'] = customer_data['Order Date and Time'].diff().dt.days
+        avg_time_between_orders = customer_data['Time Difference'].mean()
+        return pd.DataFrame({'Metric': ['Average Time Between Orders'], 'Value': [avg_time_between_orders]})
+    return None
+
+def calculate_preferred_payment_method(customer_id):
+    global data
+    customer_data = data[data['Customer ID'] == customer_id]
+    if not customer_data.empty:
+        preferred_payment_method = customer_data['Payment Method'].mode()[0]
+        return pd.DataFrame({'Metric': ['Preferred Payment Method'], 'Value': [preferred_payment_method]})
+    return None
+
+# Load the data from file and apply feature engineering
+    data = pd.read_csv('data/customer_data.csv')
+    data = feature_engg(data)
 
 @app.route('/api/customer_metrics/<customer_id>', methods= ['GET'])
 def get_customer_metrics(customer_id):
-    customer_data = data[data['Customer ID'] == customer_id]
-    if not customer_data.empty:
-        return jsonify(customer_data.to_dict(orient='records'))
+    customer_metrics = pd.DataFrame(columns=['Metric', 'Value'])
+    recency_df = calculate_recency(customer_id)
+    frequency_df = calculate_frequency(customer_id)
+    aov_df = calculate_average_order_value(customer_id)    
+    preferred_order_period_df = calculate_preferred_order_period(customer_id)
+    average_days_beween_orders_df = calculate_average_days_between_orders(customer_id)
+    preffered_payment_method_df = calculate_preferred_payment_method(customer_id)
+
+    # Create a list of DataFrames, filter out None values, and concatenate them
+    metrics_list = [
+        recency_df,
+        frequency_df,
+        aov_df,
+        preferred_order_period_df,
+        average_days_beween_orders_df,
+        preffered_payment_method_df
+    ]
+
+    if any(metrics_list):
+        customer_metrics = pd.concat([df for df in metrics_list if df is not None], ignore_index=True)
     else:
-        return jsonify({'error': 'Customer ID not found'}), 404
+        return jsonify({'message': 'No metrics available for the given customer ID'}), 404
+    
+    # Return the customer metrics as JSON
+    return jsonify(customer_metrics.to_dict(orient='records'))
+
 
 if __name__ == '__main__':
-    # Load the data from file and apply feature engineering
-    data = pd.read_csv('data/customer_data.csv')
-    data = feature_engg(data)
     app.run(debug=True, port=5000)
