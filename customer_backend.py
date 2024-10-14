@@ -151,6 +151,29 @@ def plot_rfm_distribution(rfm_with_clusters):
     plt.close(fig)
     return buf    
 
+
+def calculate_clv(rfm_df, avg_customer_lifetime=12):  # avg_customer_lifetime in months
+    """
+    Calculate the Customer Lifetime Value (CLV) for each customer based on RFM metrics.
+    
+    Parameters:
+        rfm_df (pd.DataFrame): Dataframe containing Recency, Frequency, Monetary columns for each customer.
+        avg_customer_lifetime (int): Estimated customer lifetime in months.
+    
+    Returns:
+        pd.Series: A series containing CLV values for each customer.
+    """
+    # Average Purchase Value (Monetary / Frequency)
+    avg_purchase_value = rfm_df['Monetary'] / rfm_df['Frequency']
+    
+    # Purchase Frequency is already in the Frequency column
+    purchase_frequency = rfm_df['Frequency']
+    
+    # Estimating CLV
+    clv = avg_purchase_value * purchase_frequency * avg_customer_lifetime
+    
+    return clv
+
 # API endpoint to get customer segmentation data (clusters and centroids)
 @app.route('/api/customer_segmentation_data', methods=['GET'])
 def customer_segmentation_data():
@@ -184,3 +207,21 @@ def customer_segmentation_image():
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
+
+@app.route('/api/clv', methods=['GET'])
+def customer_lifetime_value():
+    global data
+    try:
+        rfm_with_clusters, centroids_df, _ = cluster_customers(data)
+        
+        # Apply the CLV calculation to rfm_with_clusters
+        rfm_with_clusters['CLV'] = calculate_clv(rfm_with_clusters)     
+        rfm_with_clusters = rfm_with_clusters.to_dict(orient='records')
+
+        return jsonify({
+            "clv":rfm_with_clusters
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
