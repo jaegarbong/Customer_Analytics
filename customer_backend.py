@@ -1,9 +1,26 @@
-from flask import Flask, jsonify, request, make_response
+from flask import Flask, jsonify, request, make_response, send_file
 import pandas as pd
 import numpy as np
 import datetime as dt
+import seaborn as sns
+import matplotlib.pyplot as plt
+import io
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 app = Flask(__name__)
+
+# Place the CSV reading and feature engineering outside the route functions
+# Global variable to store the processed data
+data = None
+
+# Function to load and process the data
+def load_and_prepare_data():
+    
+    df = pd.read_csv(r'data/delhi_data.csv')    
+    df = feature_engg(df)
+    
+    return df
 
 # Create order_period column based on order time
 def get_order_period(order_time):
@@ -51,116 +68,119 @@ def feature_engg(df):
 
     return df
 
-def calculate_recency(customer_id):
-    global data 
-    current_date = dt.datetime.now()
-    customer_data = data[data['Customer ID'] == customer_id]
-    if not customer_data.empty:
-        last_order_date = customer_data['Order Date and Time'].max()
-        recency = (current_date - last_order_date).days
-        return pd.DataFrame({'Metric': ['Recency'], 'Value': [recency]})
-    return None
+# Execute once when the app starts: Load and preprocess the data
+data = load_and_prepare_data()
 
-def calculate_frequency(customer_id):
-    global data
-    customer_data = data[data['Customer ID'] == customer_id]
-    if not customer_data.empty:
-        frequency = len(customer_data)
-        return pd.DataFrame({'Metric': ['Frequency'], 'Value': [frequency]})
-    return None
-
-def calculate_monetary(customer_id):
-    global data
-    customer_data = data[data['Customer ID'] == customer_id]
-    if not customer_data.empty:
-        monetary = customer_data['Order Value'].sum()
-        return pd.DataFrame({'Metric': ['Monetary'], 'Value': [monetary]})
-    return None
-
-def calculate_average_order_value(customer_id):
-    global data
-    customer_df = data[data['Customer ID'] == customer_id]
+def calculate_rfm(df):       
+    reference_date = df['Order Date and Time'].max()
     
-    if not customer_df.empty:
-        # Calculate total value of orders (monetary) and frequency
-        monetary = customer_df['Order Value'].sum()
-        frequency = len(customer_df)
+    # Recency: Time since the last order for each customer
+    recency = df.groupby('Customer ID')['Order Date and Time'].max().reset_index()
+    recency['Recency'] = (reference_date - recency['Order Date and Time']).dt.days
+
+    # Frequency: Total number of orders per customer
+    frequency = df.groupby('Customer ID')['Order ID'].count().reset_index()
+    frequency.columns = ['Customer ID', 'Frequency']
+
+    # Monetary: Total amount spent by each customer
+    monetary = df.groupby('Customer ID')['Order Value'].sum().reset_index()
+    monetary.columns = ['Customer ID', 'Monetary']
+
+    # Merge the RFM metrics into one dataframe
+    rfm = recency.merge(frequency, on='Customer ID').merge(monetary, on='Customer ID')
+    return rfm
+
+def scale_rfm_features(rfm):
+    scaler = StandardScaler()
+    rfm_scaled = scaler.fit_transform(rfm[['Recency', 'Frequency', 'Monetary']])
+    return rfm_scaled,scaler
+
+def perform_kmeans_clustering(rfm_scaled, n_clusters=3):
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    clusters = kmeans.fit_predict(rfm_scaled)
+    
+    # Return the clusters and the cluster centroids
+    return clusters, kmeans.cluster_centers_
+
+def cluster_customers(df):
+    # Step 1: Calculate RFM
+    rfm = calculate_rfm(df)
+    
+    # Step 2: Scale the RFM features
+    rfm_scaled,scaler = scale_rfm_features(rfm)
+    
+    # Step 3: Perform K-Means with 3 clusters
+    clusters, centroids = perform_kmeans_clustering(rfm_scaled, n_clusters=3)
+    
+    # Add the cluster labels to the original RFM dataframe
+    rfm['Cluster'] = clusters
+
+    # Convert centroids to DataFrame here
+    centroids_df = pd.DataFrame(centroids, columns=['Recency', 'Frequency', 'Monetary'])
         
-        # Calculate Average Order Value
-        aov = monetary / frequency
-        return pd.DataFrame({'Metric': ['Average Order Value'], 'Value': [round(aov,2)]})
+    # Return the RFM dataframe with clusters and centroids
+    return rfm,centroids_df,scaler
+
+def plot_rfm_distribution(rfm_with_clusters):
+    # Set the aesthetic style of the plots
+    sns.set(style="whitegrid")
     
-    return None
-
-def calculate_preferred_order_period(customer_id):
-    global data
-    customer_data = data[data['Customer ID'] == customer_id]
-    if not customer_data.empty:
-        preferred_period = customer_data['Order Period'].mode()[0]
-        return pd.DataFrame({'Metric': ['Preferred Order Period'], 'Value': [preferred_period]})
-    return None
-
-def calculate_average_days_between_orders(customer_id):
-    global data
-    customer_data = data[data['Customer ID'] == customer_id].sort_values(by='Order Date and Time')
-    if len(customer_data) > 1:
-        customer_data['Time Difference'] = customer_data['Order Date and Time'].diff().dt.days
-        avg_time_between_orders = customer_data['Time Difference'].mean()
-        return pd.DataFrame({'Metric': ['Average Time Between Orders'], 'Value': [avg_time_between_orders]})
-    return None
-
-def calculate_preferred_payment_method(customer_id):
-    global data
-    customer_data = data[data['Customer ID'] == customer_id]
-    if not customer_data.empty:
-        preferred_payment_method = customer_data['Payment Method'].mode()[0]
-        return pd.DataFrame({'Metric': ['Preferred Payment Method'], 'Value': [preferred_payment_method]})
-    return None
-
-# Load the data from file and apply feature engineering
-data = pd.read_csv(r'data\delhi_data.csv')
-data = feature_engg(data)
-
-@app.route('/api/customer_metrics/<customer_id>', methods= ['GET'])
-def get_customer_metrics(customer_id):
+    # Create a figure with subplots for each RFM metric
+    fig, axes = plt.subplots(1, 3, figsize=(16,10))
     
-    customer_data = data[data['Customer ID'] == customer_id]
-
-    if customer_data.empty:        
-        response = make_response(jsonify({'message': 'Customer ID not found'}), 404)
-        return response
-
-    try:   
-        customer_metrics = pd.DataFrame(columns=['Metric', 'Value'])
-        recency_df = calculate_recency(customer_id)
-        frequency_df = calculate_frequency(customer_id)
-        monetary_df= calculate_monetary(customer_id)
-        aov_df = calculate_average_order_value(customer_id)    
-        preferred_order_period_df = calculate_preferred_order_period(customer_id)
-        average_days_between_orders_df = calculate_average_days_between_orders(customer_id)
-        preferred_payment_method_df = calculate_preferred_payment_method(customer_id)
-
-        # Create a list of DataFrames, filter out None values, and concatenate them
-        metrics_list = [
-            recency_df,
-            frequency_df,
-            monetary_df,        
-            aov_df,
-            preferred_order_period_df,
-            average_days_between_orders_df,
-            preferred_payment_method_df
-        ]
-        
-        customer_metrics = pd.concat([df for df in metrics_list if df is not None], ignore_index=True)   
-        
-        # Return the customer metrics as JSON
-        return jsonify(customer_metrics.to_dict(orient='records'))
+    # Recency distribution by cluster
+    sns.histplot(data=rfm_with_clusters, x='Recency', hue='Cluster', multiple='stack', palette='Set1', ax=axes[0], kde=True)
+    axes[0].set_title('Recency Distribution by Cluster')
+    axes[0].set_xlabel('Recency (Days)')
     
+    # Frequency distribution by cluster
+    sns.histplot(data=rfm_with_clusters, x='Frequency', hue='Cluster', multiple='stack', palette='Set2', ax=axes[1], kde=True)
+    axes[1].set_title('Frequency Distribution by Cluster')
+    axes[1].set_xlabel('Frequency (Orders)')
+    
+    # Monetary distribution by cluster
+    sns.histplot(data=rfm_with_clusters, x='Monetary', hue='Cluster', multiple='stack', palette='Set3', ax=axes[2], kde=True)
+    axes[2].set_title('Monetary Distribution by Cluster')
+    axes[2].set_xlabel('Monetary (Amount Spent)')
+
+    # Save the figure to a BytesIO object
+    buf = io.BytesIO()
+    plt.tight_layout()
+    plt.savefig(buf, format='png')
+    buf.seek(0)        
+    plt.close(fig)
+    return buf    
+
+# API endpoint to get customer segmentation data (clusters and centroids)
+@app.route('/api/customer_segmentation_data', methods=['GET'])
+def customer_segmentation_data():
+    global data
+    try:
+        rfm_with_clusters, centroids_df, scaler = cluster_customers(data)
+
+        # Use scaler to inverse transform centroids to original scale
+        centroids_original = scaler.inverse_transform(centroids_df)
+        centroids_df = pd.DataFrame(centroids_original, columns=['Recency', 'Frequency', 'Monetary']).round(0)
+
+        cluster_data = rfm_with_clusters.to_dict(orient='records')       
+        centroids_data = centroids_df.to_dict(orient='records')
+        return jsonify({
+            "clusters": cluster_data,
+            "centroids": centroids_data
+        })
     except Exception as e:
-        # Log the error for debugging purposes
-        # print(f"Error while calculating metrics for customer ID {customer_id}: {e}")        
-        return make_response(jsonify({'message': 'An error occurred while processing metrics.'}), 500):
+        return jsonify({"error": str(e)}), 500
 
+# API endpoint to get the RFM distribution plot as an image
+@app.route('/api/customer_segmentation_image', methods=['GET'])
+def customer_segmentation_image():
+    global data
+    try:
+        rfm_with_clusters,centroids,scaler = cluster_customers(data)
+        img_buf = plot_rfm_distribution(rfm_with_clusters)
+        return send_file(img_buf, mimetype='image/png', as_attachment=False, download_name='rfm_plot.png')
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

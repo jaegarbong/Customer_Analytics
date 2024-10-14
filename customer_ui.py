@@ -1,7 +1,8 @@
 import streamlit as st
 import requests
 import pandas as pd
-from sys import exit
+from PIL import Image
+from io import BytesIO
 
 st.title('Customer Dashboard')
 st.sidebar.title('Navigation')
@@ -23,15 +24,14 @@ if options == 'Search Customer Metrics':
                 metrics  = response.json()                    
 
                 if metrics and isinstance(metrics, list) and all(isinstance(i, dict) for i in metrics):          
-                    # Create a DataFrame from the metrics data if it is valid
-                    # metrics_df = pd.DataFrame(metrics)
+                    # Create a DataFrame from the metrics data if it is valid                    
                     metrics_df = pd.json_normalize(metrics)
 
                     # Display Metrics in Streamlit
                     st.write(f'Customer Metrics for {customer_id}')
                     st.table(metrics_df)
                 else:
-                    st.error('No valid metrics available for the given customer ID.')                    
+                    st.error('Customer Not Found.')                    
 
             elif response.status_code == 404:
                 # Handle case when customer ID is not found
@@ -46,4 +46,35 @@ if options == 'Search Customer Metrics':
             
 elif options == 'Customer Segmentation Dashboard':
     st.header('Customer Segmentation Dashboard')
-    st.write('Segmentation analysis will be displayed here.')
+
+    # Section 1: Display Cluster Table
+    st.subheader("Customer Segmentation Table")
+    segmentation_data = requests.get("http://127.0.0.1:5000/api/customer_segmentation_data").json()
+    cluster_data = segmentation_data['clusters']
+    cluster_df = pd.DataFrame(cluster_data)
+    st.dataframe(cluster_df)  # Display cluster data in a table
+
+    # Section 2: Cluster Interpretation
+    st.subheader("Cluster Interpretation")
+    centroids_data = segmentation_data['centroids']
+    centroids_data = pd.DataFrame(centroids_data).astype('int')
+
+    # Add a new column explaining the cluster in brief
+    centroids_data['Cluster Interpretation'] = [
+    'Low Recency, Low Frequency, High Monetary (High-value customers)',
+    'High Recency, Low Frequency, Moderate Monetary (Inactive customers)',
+    'Moderate Recency, High Frequency, High Monetary (Frequent and high-value customers)'
+]
+    st.table(centroids_data)    
+ 
+    # Section 3: Display RFM Distribution Plot
+    st.subheader("RFM Distribution Plot")
+    try:    
+        response = requests.get("http://127.0.0.1:5000/api/customer_segmentation_image")
+        if response.status_code == 200:
+            img = Image.open(BytesIO(response.content))
+            st.image(img, caption="RFM Distribution by Cluster", use_column_width=True)            
+        else:
+            st.error("Failed to load the plot. Status Code: " + str(response.status_code))
+    except Exception as e:
+        st.error(f"Error fetching plot: {str(e)}")
