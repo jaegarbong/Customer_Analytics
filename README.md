@@ -1,11 +1,15 @@
-# Project README: Streamlit and Flask Integration
-
 This README file provides detailed instructions for running both the Streamlit front end and Flask back end applications to analyze and visualize customer metrics.
 
 ## Project Overview
 This project aims to create a customer analytics dashboard by integrating:
 - **Flask** as a backend API to compute customer metrics.
 - **Streamlit** as a front end for user interaction, where users can enter a customer ID and visualize the metrics fetched from the Flask API.
+
+This project is designed to create a comprehensive customer analytics dashboard by integrating a backend API with a user-friendly front end. The goal is to:
+
+1. Provide detailed customer insights through metrics such as recency, frequency, and monetary value.
+2. Allow interactive visualization and exploration of customer data to better understand customer behavior and segmentation.
+3. The backend is powered by Flask, which serves as an API to calculate metrics, while the front end is implemented using Streamlit, providing an interactive way for users to input customer IDs and visualize key metrics.
 
 ## Prerequisites
 To run this project, you need:
