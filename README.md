@@ -130,12 +130,89 @@ The Streamlit front end allows you to input a customer ID and view customer metr
 - **Environment Variables**: Set environment variables (`FLASK_APP`, `FLASK_ENV`) as needed for development.
 - **Data File**: Ensure `data/customer_data.csv` exists in the correct location and has all the required columns for metric calculations.
 
+### Sharing the Application with Others
+Now that the application is running locally in Docker, there are a few ways to share it with others so that they can run it easily:
+
+#### **Option 1: Share the Docker Image**
+1. **Save the Docker Image** to a file:
+   ```sh
+   docker save -o customer-analytics-app.tar customer-analytics-app
+   ```
+   This creates a `.tar` file containing your Docker image, which can be shared via cloud storage or USB.
+
+2. **Load the Image** on another machine:
+   ```sh
+   docker load -i customer-analytics-app.tar
+   ```
+   Then, run the container:
+   ```sh
+   docker run -p 5000:5000 -p 8501:8501 customer-analytics-app
+   ```
+
+#### **Option 2: Publish to Docker Hub**
+1. **Tag the Image** for Docker Hub:
+   ```sh
+   docker tag customer-analytics-app your-dockerhub-username/customer-analytics-app
+   ```
+
+2. **Push the Image** to Docker Hub:
+   ```sh
+   docker push your-dockerhub-username/customer-analytics-app
+   ```
+
+3. **Share the Repository** so others can pull it:
+   ```sh
+   docker pull your-dockerhub-username/customer-analytics-app
+   ```
+   They can then run the container:
+   ```sh
+   docker run -p 5000:5000 -p 8501:8501 your-dockerhub-username/customer-analytics-app
+   ```
+
+#### **Option 3: Deploy to the Cloud**
+- You can deploy the Docker container to a cloud provider like **AWS**, **Google Cloud**, **Azure**, **DigitalOcean**, or **Heroku**. This makes the application accessible via a public URL, eliminating the need for others to install Docker locally.
+
+#### **Option 4: Share the Project Code**
+- **Share the entire project folder** including the **Dockerfile**, **requirements.txt**, and Python scripts.
+- The recipient can **build and run** the Docker image themselves using:
+  ```sh
+  docker build -t customer-analytics-app .
+  docker run -p 5000:5000 -p 8501:8501 customer-analytics-app
+  ```
+
+### How to Use This Image on Another Local System
+1. **Receive the Docker Image** (either via a `.tar` file or by pulling from Docker Hub).
+
+2. **Load the Image** if received as a `.tar` file:
+   ```sh
+   docker load -i customer-analytics-app.tar
+   ```
+
+3. **Pull the Image** from Docker Hub if it was published there:
+   ```sh
+   docker pull your-dockerhub-username/customer-analytics-app
+   ```
+
+4. **Run the Docker Container**:
+   ```sh
+   docker run -p 5000:5000 -p 8501:8501 customer-analytics-app
+   ```
+   This will start the application, making it accessible at `http://localhost:5000` for the Flask backend and `http://localhost:8501` for the Streamlit front end.
+
+### Recommendations
+- **Colleagues Familiar with Docker**: Use **Option 1** (save image) or **Option 2** (Docker Hub).
+- **General Users**: Deploy the application using **Option 3** to make it accessible via a URL.
+
+
+
 ## Summary
 - Set up and run the Flask backend using `customer_backend.py` to serve customer metrics.
 - Set up and run the Streamlit front end using `customer_ui.py` to allow interaction with the backend.
 - Access both applications locally to perform end-to-end customer analytics.
 
 Feel free to extend the application by adding new features or improving the user interface. For any questions, refer to the official documentation for **Flask** or **Streamlit**.
+
+
 
 ### Author
 This project was developed to help visualize customer analytics by integrating a simple backend API with an interactive front-end dashboard.
